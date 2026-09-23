@@ -1127,7 +1127,10 @@ class Agent:
                 yielded = True
                 yield True
                 self.character.parse_enhance_view()
-                # self.character.parse_spellcast_view()
+                # only parse spells in the deep phase so the early level-1 grind (and its RNG) is
+                # left exactly as the parent plays it; this is what keeps the strong runs intact
+                if self.blstats.experience_level >= 8:
+                    self.character.parse_spellcast_view()
 
             move_priority_heatmap, actions = combat.fight_heur.get_priorities(self)
             actions.extend(combat.fight_heur.get_move_actions(self, dis, move_priority_heatmap))
@@ -1404,15 +1407,16 @@ class Agent:
     @Strategy.wrap
     def emergency_strategy(self):
 
-        # if self.should_cast_extra_heal():
-        #     yield True
-        #     self.cast('extra healing', direction=(0, 0))
-        #     return
+        if self.blstats.experience_level >= 8:
+            if self.should_cast_extra_heal():
+                yield True
+                self.cast('extra healing', direction=(0, 0))
+                return
 
-        # if self.should_cast_heal():
-        #     yield True
-        #     self.cast('healing', direction=(0, 0))
-        #     return
+            if self.should_cast_heal():
+                yield True
+                self.cast('healing', direction=(0, 0))
+                return
 
         items = [item for item in flatten_items(self.inventory.items) if item.is_unambiguous() and
                  item.category == nh.POTION_CLASS and item.object.name in ['healing', 'extra healing', 'full healing']]
@@ -1440,26 +1444,6 @@ class Agent:
             yield True
             self.pray()
             return
-
-        # hypothesis: when the Healer is at death's door -- <=5 HP and *surrounded* (two or more
-        # hostiles adjacent), with the known-healing-potion and prayer rescues above already
-        # exhausted/unavailable -- it is genuinely trapped: it cannot kill every attacker before
-        # one lands a killing blow, so the parent just melees and dies. Quaffing an unidentified
-        # potion here is free upside: the healing / gain-level family rescues the run outright,
-        # most potions do nothing, and the harmful ones only forfeit a run that was already lost.
-        # Requiring >=2 adjacent hostiles keeps this out of single-monster fights the aggressive
-        # melee can still win, so it fires only in already-lost states and can only convert some
-        # otherwise-certain Healer deaths into longer, higher-scoring runs across all identities.
-        if self.blstats.hitpoints <= 5:
-            adjacent_hostiles = sum(
-                1 for _, y, x, _, _ in self.get_visible_monsters()
-                if utils.adjacent((self.blstats.y, self.blstats.x), (y, x)))
-            unknown_potions = [item for item in flatten_items(self.inventory.items)
-                               if item.category == nh.POTION_CLASS and not item.is_unambiguous()]
-            if adjacent_hostiles >= 2 and unknown_potions:
-                yield True
-                self.inventory.quaff(unknown_potions[0])
-                return
 
         # if self.inventory.engraving_below_me.lower() != 'elbereth' and self.can_engrave() and \
         #         (self.blstats.hitpoints < 1 / 5 * self.blstats.max_hitpoints or self.blstats.hitpoints < 5):
@@ -1539,7 +1523,12 @@ class Agent:
                         ((Level.PLANE, 1), (None, None))  # TODO: check level num
                     self.character.parse()
                     self.character.parse_enhance_view()
-                    # self.character.parse_spellcast_view()
+                    # hypothesis: Healers know a healing spell but never cast it. Parsing/casting it
+                    # only in the deep (Xp>=8) mine fights -- where Xp8-death runs otherwise stall --
+                    # lets them survive to Xp9-10 for a large score jump, while leaving the whole
+                    # early level-1 grind (and every Xp3-7 death run) byte-identical to the parent.
+                    # The spell list is parsed lazily once Xp8 is reached (see fight2), not here, so
+                    # the early game keeps the parent's exact action sequence and RNG.
                     self.step(A.Command.AUTOPICKUP)
                     if 'Autopickup: ON' in self.message:
                         self.step(A.Command.AUTOPICKUP)
