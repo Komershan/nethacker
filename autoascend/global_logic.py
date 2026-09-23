@@ -639,6 +639,9 @@ class GlobalLogic:
                 self.agent.engulfed_fight(),
             ])
             .preempt(self.agent, [
+                self.agent.proactive_sleep_strategy(),
+            ])
+            .preempt(self.agent, [
                 self.agent.emergency_strategy(),
             ])
             .preempt(self.agent, [

@@ -1512,6 +1512,93 @@ class Agent:
 
         yield False
 
+    @utils.debug_log('proactive_sleep')
+    @Strategy.wrap
+    def proactive_sleep_strategy(self):
+        # hypothesis: the Healer's wand of sleep is its single best early weapon, yet it is only used
+        # reactively -- at crisis HP (emergency_strategy) or when the fight heuristic happens to line up
+        # a multi-target ray. So the weak Healer walks into melee with the very monsters that kill it
+        # (giant bats, rothes, soldier ants, gnome lords, Woodland-elves) and gets whittled down before
+        # any emergency fires. Use the wand PROACTIVELY: when a genuinely threatening monster (mlevel>=2
+        # or faster than us) is 2-4 tiles away on a straight firing line, sleep it FIRST, then let fight2
+        # kill it while it is helpless -- turning deadly melee exchanges into free, damage-less kills and
+        # more surviving XP. Charges are conserved (skip trivial rats/newts/jackals/hobbits, one zap per
+        # 8 turns). Scoped to non-gnome Healers: the gnome runs' whole score comes from a few RNG-fragile
+        # deep dives that must stay byte-identical, whereas humans -- who have no deep runs to protect and
+        # drag the average down -- are exactly who this rescue is for.
+        if self.character.race == self.character.GNOME:
+            yield False
+        if self.blstats.time - getattr(self, '_last_proactive_sleep_turn', -100) < 8:
+            yield False
+        if self.inventory.engraving_below_me.lower() == 'elbereth':
+            yield False
+
+        sleep_wand = None
+        for item in flatten_items(self.inventory.items):
+            if item.is_wand() and item.is_unambiguous() and item.object.name == 'sleep' \
+                    and item.uses != 'no charges' and not str(item.uses).endswith(':0'):
+                sleep_wand = item
+                break
+        if sleep_wand is None:
+            yield False
+
+        y0, x0 = self.blstats.y, self.blstats.x
+        walkable = self.current_level().walkable
+        peaceful = self.monster_tracker.peaceful_monster_mask
+        hp_ratio = self.blstats.hitpoints / max(self.blstats.max_hitpoints, 1)
+
+        # Count nearby real threats to decide whether the spot is dangerous enough to spend a charge.
+        # A winnable 1-on-1 against a weak-ish foe is left to normal combat so healthy runs are not
+        # perturbed; the wand is reserved for swarms, tough out-of-depth singles, or losing fights.
+        near_threats = 0
+        for dist, my, mx, mon, glyph in self.get_visible_monsters():
+            if dist <= 4 and mon.mname not in combat.monster_utils.WEAK_MONSTERS \
+                    and mon.mname not in combat.monster_utils.ONLY_RANGED_SLOW_MONSTERS \
+                    and (getattr(mon, 'mlevel', 0) >= 2
+                         or combat.monster_utils.is_monster_faster(self, (dist, my, mx, mon, glyph))):
+                near_threats += 1
+
+        best = None
+        for dist, my, mx, mon, glyph in self.get_visible_monsters():
+            if mon.mname in combat.monster_utils.WEAK_MONSTERS or \
+                    mon.mname in combat.monster_utils.ONLY_RANGED_SLOW_MONSTERS:
+                continue
+            mlevel = getattr(mon, 'mlevel', 0)
+            faster = combat.monster_utils.is_monster_faster(self, (dist, my, mx, mon, glyph))
+            if not (mlevel >= 2 or faster):
+                continue
+            # danger gate: outnumbered, a genuinely tough single (mlevel>=4), or already losing
+            dangerous = near_threats >= 2 or mlevel >= 4 or (hp_ratio < 0.6 and mlevel >= 2)
+            if not dangerous:
+                continue
+            dy, dx = my - y0, mx - x0
+            cheb = max(abs(dy), abs(dx))
+            if cheb < 2 or cheb > 4:
+                continue
+            if not (dy == 0 or dx == 0 or abs(dy) == abs(dx)):
+                continue
+            sy, sx = int(np.sign(dy)), int(np.sign(dx))
+            cy, cx = y0, x0
+            clear = True
+            for _ in range(cheb - 1):
+                cy += sy
+                cx += sx
+                if not walkable[cy, cx] or self.glyphs[cy, cx] in G.PETS or peaceful[cy, cx]:
+                    clear = False
+                    break
+            if not clear:
+                continue
+            if best is None or dist < best[0]:
+                best = (dist, my, mx)
+
+        if best is None:
+            yield False
+
+        yield True
+        self._last_proactive_sleep_turn = self.blstats.time
+        direction = self.calc_direction(y0, x0, best[1], best[2], allow_nonunit_distance=True)
+        self.zap(sleep_wand, direction)
+
     @utils.debug_log('dig_down')
     @Strategy.wrap
     def dig_down(self):
