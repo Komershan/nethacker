@@ -633,6 +633,9 @@ class GlobalLogic:
                 self.follow_guard(),
             ])
             .preempt(self.agent, [
+                self.agent.deep_combat_heal(),
+            ])
+            .preempt(self.agent, [
                 self.agent.fight2(),
             ])
             .preempt(self.agent, [

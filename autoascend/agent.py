@@ -1403,6 +1403,51 @@ class Agent:
         low_hp = hp_ratio < 0.5 and (self.blstats.max_hitpoints - self.blstats.hitpoints > 25)
         return self.blstats.energy >= 15 and low_hp
 
+    @utils.debug_log('deep_combat_heal')
+    @Strategy.wrap
+    def deep_combat_heal(self):
+        # hypothesis: in global_strategy, fight2 (melee) is preempted BEFORE emergency_strategy, so a
+        # Healer at low HP keeps trading blows with an adjacent monster instead of using its free,
+        # repeatable healing spell -- the heal only gets a turn once fight2 declines, by which point a
+        # steady-damage foe (ogre king, orc mummy, gnome lord, rothe) may already have whittled it to
+        # death. Give the heal priority over melee when HP is below half with a hostile monster
+        # adjacent and the spell is reliably castable, so the deep Healer heals through fights it would
+        # otherwise lose and banks more depth/XP. Strictly gated to Xp>=8 (the deep phase, where the
+        # spell list is already parsed): the whole RNG-fragile pre-Xp8 game -- for every identity --
+        # stays byte-identical to the parent, so no strong run can regress; only the already-surviving
+        # deep phase is touched, and only defensively (a cast is skipped unless its fail chance is low,
+        # so it never wastes a combat turn on a likely miss).
+        if self.blstats.experience_level < 8:
+            yield False
+        if self.character.role != self.character.HEALER:
+            yield False
+        if self.blstats.hitpoints >= 1 / 2 * self.blstats.max_hitpoints:
+            yield False
+        if self.blstats.hunger_state >= Hunger.FAINTING:
+            yield False
+        adjacent_hostile = False
+        for _, my, mx, _, _ in self.get_visible_monsters():
+            if max(abs(my - self.blstats.y), abs(mx - self.blstats.x)) == 1:
+                adjacent_hostile = True
+                break
+        if not adjacent_hostile:
+            yield False
+
+        missing = self.blstats.max_hitpoints - self.blstats.hitpoints
+        if 'extra healing' in self.character.known_spells and self.blstats.energy >= 15 \
+                and self.character.spell_fail_chance.get('extra healing', 1.0) <= 0.15 \
+                and self._last_turn - self.last_cast_fail_turn['extra healing'] >= 2 and missing > 25:
+            yield True
+            self.cast('extra healing', direction=(0, 0))
+            return
+        if 'healing' in self.character.known_spells and self.blstats.energy >= 5 \
+                and self.character.spell_fail_chance.get('healing', 1.0) <= 0.2 \
+                and self._last_turn - self.last_cast_fail_turn['healing'] >= 2:
+            yield True
+            self.cast('healing', direction=(0, 0))
+            return
+        yield False
+
     @utils.debug_log('emergency_strategy')
     @Strategy.wrap
     def emergency_strategy(self):
