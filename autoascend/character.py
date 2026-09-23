@@ -275,6 +275,11 @@ class Character:
 
         self.is_lycanthrope = False
 
+        # populated by parse_spellcast_view(); default to empty so should_cast_* can be
+        # queried before the spell menu has ever been parsed
+        self.known_spells = dict()
+        self.spell_fail_chance = dict()
+
     def update(self):
         if 'You feel feverish.' in self.agent.message:
             self.is_lycanthrope = True

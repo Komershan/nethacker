@@ -1127,7 +1127,11 @@ class Agent:
                 yielded = True
                 yield True
                 self.character.parse_enhance_view()
-                # self.character.parse_spellcast_view()
+                # refresh spell fail chances when the level changed (fail chance drops with XL);
+                # throttled so we don't open the CAST menu every single step
+                if getattr(self, '_spell_parsed_xl', None) != self.blstats.experience_level:
+                    self.character.parse_spellcast_view()
+                    self._spell_parsed_xl = self.blstats.experience_level
 
             move_priority_heatmap, actions = combat.fight_heur.get_priorities(self)
             actions.extend(combat.fight_heur.get_move_actions(self, dis, move_priority_heatmap))
@@ -1383,8 +1387,10 @@ class Agent:
             return False
         if self.character.spell_fail_chance['healing'] > 0.2:
             return False
-        hp_ratio = self.blstats.hitpoints / self.blstats.max_hitpoints
-        low_hp = hp_ratio < 0.5 or (self.blstats.hitpoints < 10 and self.blstats.max_hitpoints > 10)
+        # crisis threshold, mirroring the potion block: the spell only fires as a last resort, after
+        # potions and prayer are unavailable (see emergency_strategy ordering), so healthy runs that
+        # still hold those resources never reach it and stay identical to the parent.
+        low_hp = self.blstats.hitpoints < 1 / 3 * self.blstats.max_hitpoints or self.blstats.hitpoints < 8
         return self.blstats.energy >= 5 and low_hp
 
     def should_cast_extra_heal(self):
@@ -1404,16 +1410,6 @@ class Agent:
     @Strategy.wrap
     def emergency_strategy(self):
 
-        # if self.should_cast_extra_heal():
-        #     yield True
-        #     self.cast('extra healing', direction=(0, 0))
-        #     return
-
-        # if self.should_cast_heal():
-        #     yield True
-        #     self.cast('healing', direction=(0, 0))
-        #     return
-
         items = [item for item in flatten_items(self.inventory.items) if item.is_unambiguous() and
                  item.category == nh.POTION_CLASS and item.object.name in ['healing', 'extra healing', 'full healing']]
         if (
@@ -1431,23 +1427,36 @@ class Agent:
             self.inventory.quaff(items[0])
             return
 
-        # hypothesis: fragile Healers get one-shot from a seemingly-safe HP because the emergency
-        # prayer only fires at HP < max/5 (or /6) or HP < 6 -- so low that a single hard hit can drop
-        # them from "safe" straight to dead, skipping the prayer window entirely. Raise the crisis
-        # threshold to match the potion threshold (HP < max/3 or HP < 8) so prayer -- the reliable
-        # full-heal backstop once potions are spent -- fires with real margin. This only changes
-        # behaviour in near-death states (which are otherwise terminal), so it barely perturbs the
-        # fixed-seed playout of healthy runs while converting some avoidable deaths into survival --
-        # and more survival == more XP/depth == higher score across all four Healer identities.
         if (
                 (self.is_safe_to_pray(500) and
-                 (self.blstats.hitpoints < 1 / 3
-                  * self.blstats.max_hitpoints or self.blstats.hitpoints < 8))
+                 (self.blstats.hitpoints < 1 / (5 if self.blstats.experience_level < 6 else 6)
+                  * self.blstats.max_hitpoints or self.blstats.hitpoints < 6))
                 or (self.is_safe_to_pray(400) and self.blstats.hunger_state >= Hunger.FAINTING)
         ):
             yield True
             self.pray()
             return
+
+        # hypothesis: the parent never casts the Healer's healing spell (this branch and both
+        # parse_spellcast_view() calls that feed it are commented out), so once its scarce healing
+        # potions are spent and its once-per-~1000-turn prayer is on cooldown, a Healer in an HP
+        # crisis has no heal left and simply dies (deaths cluster at Xp:5-8). Healers know 'healing'
+        # from turn 1 and have a large Pw pool, so as a LAST RESORT -- only after the potion and
+        # prayer blocks above have declined -- cast the healing spell. Healthy runs still have potions
+        # / prayer and never reach this branch, so their fixed-seed playout is left unchanged; only
+        # runs that would otherwise die with an empty heal budget get another chance, which is pure
+        # upside == more XP/depth == higher score across all four Healer identities.
+        if self.should_cast_heal():
+            # only cast when no monster is in melee range: if one is adjacent, the parent's fallthrough
+            # (flee/reposition via the movement strategies) survives better than burning a stationary
+            # turn on the spell -- so restrict the spell to genuinely free heals, which avoids the
+            # regressions seen when casting while cornered.
+            adj_hostile = any(utils.adjacent((self.blstats.y, self.blstats.x), (m[1], m[2]))
+                              for m in self.get_visible_monsters())
+            if not adj_hostile:
+                yield True
+                self.cast('healing', direction=(0, 0))
+                return
 
         # if self.inventory.engraving_below_me.lower() != 'elbereth' and self.can_engrave() and \
         #         (self.blstats.hitpoints < 1 / 5 * self.blstats.max_hitpoints or self.blstats.hitpoints < 5):
@@ -1527,7 +1536,16 @@ class Agent:
                         ((Level.PLANE, 1), (None, None))  # TODO: check level num
                     self.character.parse()
                     self.character.parse_enhance_view()
-                    # self.character.parse_spellcast_view()
+                    # hypothesis: the parent never populates known_spells (both parse_spellcast_view
+                    # calls are commented out), so the Healer's healing spells in emergency_strategy
+                    # can never fire -- it burns scarce healing potions and its once-per-~1000-turn
+                    # prayer on every HP crisis instead of casting free spell healing from its large
+                    # Pw pool. Parsing the spell list at init (and refreshing it on level-up in the
+                    # move loop, where stepping is allowed) lets emergency_strategy self-heal, so all
+                    # four Healer identities survive more of the early melee fights they currently
+                    # lose at Xp:5-8 -- more survival == more XP/depth == higher score across the board.
+                    self.character.parse_spellcast_view()
+                    self._spell_parsed_xl = self.blstats.experience_level
                     self.step(A.Command.AUTOPICKUP)
                     if 'Autopickup: ON' in self.message:
                         self.step(A.Command.AUTOPICKUP)
