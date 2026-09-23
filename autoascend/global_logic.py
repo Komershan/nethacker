@@ -515,7 +515,19 @@ class GlobalLogic:
         while 1:
             explore_stairs_condition = lambda: False
             if self.milestone == Milestone.BE_ON_FIRST_LEVEL:
-                condition = lambda: self.agent.blstats.experience_level >= 8
+                # hypothesis: a chunk of low-scoring runs get stuck grinding a food-poor depth 1 --
+                # they must reach Xp>=8 to descend, but sparse spawns can't level them fast enough,
+                # so they burn through their starting food and die of starvation in place (a
+                # near-0-progress death). Keep the normal Xp>=8 grind untouched so the healthy,
+                # RNG-tuned runs stay byte-identical; but once a run has actually reached FAINTING
+                # hunger with zero food left in its pack, it is about to starve where it stands, so
+                # let it descend to fresh levels that have monsters to kill and corpses to eat. This
+                # trigger only fires in an already-doomed state (healthy/corpse-fed runs eat well
+                # before FAINTING), so it cannot perturb the successful runs -- it just converts some
+                # certain-starvation deaths into a chance at more depth, XP and food.
+                condition = lambda: self.agent.blstats.experience_level >= 8 \
+                    or (self.agent.blstats.hunger_state >= Hunger.FAINTING
+                        and self.agent.inventory.items.total_nutrition() == 0)
                 # explore_stairs_condition = lambda: self.agent.inventory.items.total_nutrition() == 0 and \
                 #                                    self.agent.blstats.hunger_state >= Hunger.NOT_HUNGRY
                 level = (Level.DUNGEONS_OF_DOOM, 1)
