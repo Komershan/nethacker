@@ -641,4 +641,7 @@ class GlobalLogic:
             .preempt(self.agent, [
                 self.agent.emergency_strategy(),
             ])
+            .preempt(self.agent, [
+                self.agent.dig_down(),
+            ])
         )
