@@ -164,6 +164,12 @@ def simulate_wand_path(agent, wand, monsters, dy, dx):
         yield y, x, hit_object, expected_hit_count
 
 
+# Fast, hard-hitting mounts that kill the bot's deepest (highest-scoring) runs in the Gnomish
+# Mines -- white unicorn (seen killing a run at Dlvl:12) and warhorse (Dlvl:15). None of them
+# generate on the shallow levels where every other run dies, and none resist sleep.
+DEEP_FAST_THREATS = frozenset({'white unicorn', 'gray unicorn', 'black unicorn', 'warhorse'})
+
+
 def get_potential_wand_usages(agent, monsters, dy, dx):
     ret = []
     player_hp_ratio = agent.blstats.hitpoints / agent.blstats.max_hitpoints
@@ -184,6 +190,16 @@ def get_potential_wand_usages(agent, monsters, dy, dx):
                 _, y, x, mon, _ = monster
                 if mon.mname in WEAK_MONSTERS:
                     priority += min(p, 1) * 1
+                # hypothesis: the deep runs are the only ones that bank real depth score, yet they
+                # die in the Mines to fast mounts (white unicorn at Dlvl:12, warhorse at Dlvl:15)
+                # that the parent fights in melee -- these aren't flagged dangerous, so the sleep
+                # wand scores only 10 - 15 = -5 and loses to melee. Make an offensive wand strongly
+                # prefer to disable them (sleep/strike, then flee or chip them safely). This is
+                # confined to monsters that appear only deep in the Mines, so every shallow run and
+                # every human run (which never reach them) stays byte-identical, and a deep run can
+                # only ever be helped: the deepest level reached is already banked before the fight.
+                elif mon.mname in DEEP_FAST_THREATS:
+                    priority += p * 40
                 elif is_dangerous_monster(monster):
                     priority += p * 25
                 else:
