@@ -275,10 +275,6 @@ class Character:
 
         self.is_lycanthrope = False
 
-        # populated lazily by parse_spellcast_view once the Healer reaches the deep-dive phase
-        self.known_spells = dict()
-        self.spell_fail_chance = dict()
-
     def update(self):
         if 'You feel feverish.' in self.agent.message:
             self.is_lycanthrope = True
