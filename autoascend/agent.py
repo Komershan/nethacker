@@ -1444,6 +1444,44 @@ class Agent:
         # per-1000-turn prayer more than once, and surviving a hit beats starving 500 turns later.
         # Since score is essentially a function of experience level, more survival == more XP == more
         # score across all four Healer identities.
+        # hypothesis: human Healers die in early melee far more than gnome Healers (0.05 vs 0.08-0.10
+        # here). A gnome Healer reaches the Gnomish Mines, where gnomish monsters are peaceful, and
+        # levels up in relative safety; a human Healer has no such refuge and gets whittled to death
+        # by ordinary monsters with its feeble scalpel. Its strongest emergency tool is the wand of
+        # sleep, yet in a crisis it either melees on (and dies) or prays -- and praying takes several
+        # turns during which the adjacent monster keeps hitting, so it can die mid-prayer. When at
+        # crisis HP (HP<max/3) with a hostile monster adjacent and a wand of sleep in hand, sleep the
+        # attacker FIRST: this disables the immediate threat so the following turns (prayer, potion,
+        # Elbereth, or plain HP regen) resolve safely, turning otherwise-fatal early fights into
+        # survival == more XP == more score. A per-run turn guard stops it re-zapping an already-
+        # sleeping monster and draining the wand. Scoped to non-gnome Healers so every gnome run stays
+        # byte-identical to the parent (gnomes already progress deep via the mines, and their fragile
+        # deep runs must not be perturbed), and to this HP<max/3 + adjacent-threat crisis, a state
+        # healthy runs never reach, so it never disturbs the human Xp7-9 runs either.
+        if self.character.race != self.character.GNOME and \
+                self.inventory.engraving_below_me.lower() != 'elbereth' and \
+                self.blstats.time - getattr(self, '_last_emergency_sleep_turn', -100) >= 8 and \
+                (self.blstats.hitpoints < 1 / 3 * self.blstats.max_hitpoints
+                 or self.blstats.hitpoints < 8):
+            sleep_wand = None
+            for item in flatten_items(self.inventory.items):
+                if item.is_wand() and item.is_unambiguous() and item.object.name == 'sleep' \
+                        and item.uses != 'no charges' and not str(item.uses).endswith(':0'):
+                    sleep_wand = item
+                    break
+            if sleep_wand is not None:
+                target = None
+                for _, my, mx, _, _ in self.get_visible_monsters():
+                    if max(abs(my - self.blstats.y), abs(mx - self.blstats.x)) == 1:
+                        target = (my, mx)
+                        break
+                if target is not None:
+                    direction = self.calc_direction(self.blstats.y, self.blstats.x, *target)
+                    self._last_emergency_sleep_turn = self.blstats.time
+                    yield True
+                    self.zap(sleep_wand, direction)
+                    return
+
         if (
                 (self.is_safe_to_pray(500) and
                  (self.blstats.hitpoints < 1 / 3
