@@ -1435,10 +1435,19 @@ class Agent:
             self.inventory.quaff(items[0])
             return
 
+        # hypothesis: the weak Healers die mid-grind because the emergency prayer only fires at
+        # HP < max/5 (or /6) or HP < 6 -- so low that a single hard hit (mumak, soldier ant, magic
+        # missile, rothe, ...) drops them from a seemingly-safe HP straight to dead, skipping the
+        # window entirely. Raise the crisis threshold to match the potion threshold (HP < max/3 or
+        # HP < 8) so prayer -- the reliable full-heal backstop once potions are spent -- kicks in
+        # with real margin. Games here are short (death by Xp5-8), so this rarely spends the ~once-
+        # per-1000-turn prayer more than once, and surviving a hit beats starving 500 turns later.
+        # Since score is essentially a function of experience level, more survival == more XP == more
+        # score across all four Healer identities.
         if (
                 (self.is_safe_to_pray(500) and
-                 (self.blstats.hitpoints < 1 / (5 if self.blstats.experience_level < 6 else 6)
-                  * self.blstats.max_hitpoints or self.blstats.hitpoints < 6))
+                 (self.blstats.hitpoints < 1 / 3
+                  * self.blstats.max_hitpoints or self.blstats.hitpoints < 8))
                 or (self.is_safe_to_pray(400) and self.blstats.hunger_state >= Hunger.FAINTING)
         ):
             yield True
