@@ -1727,7 +1727,14 @@ class Agent:
         if isinstance(exc, (KeyboardInterrupt, AgentFinished, SystemExit)):
             raise exc
         if isinstance(exc, BaseException):
-            if not isinstance(exc, AgentPanic) and not self.panic_on_errors:
+            # hypothesis: any unexpected in-game bug (a failed assertion on an unusual message such
+            # as "Without a free hand, you cannot loot anything.", a parse error, ...) used to be
+            # re-raised here, killing the agent thread -- the game then idles on ESC until the
+            # no-progress timeout, forfeiting all further progress of an otherwise healthy (often
+            # Xp7-9) run. Recovering from ordinary exceptions exactly like an AgentPanic (reset the
+            # state, re-plan) lets those runs keep playing and progressing; games that never hit a
+            # bug are unaffected. Genuinely stuck loops are still caught by the cyclic-panic guard.
+            if not isinstance(exc, (AgentPanic, Exception)) and not self.panic_on_errors:
                 raise exc
             self.stats_logger.log_event('agent_panic')
             self.all_panics.append(exc)

@@ -512,6 +512,7 @@ class GlobalLogic:
     @Strategy.wrap
     def current_strategy(self):
         yield True
+        idle_iterations = 0
         while 1:
             explore_stairs_condition = lambda: False
             if self.milestone == Milestone.BE_ON_FIRST_LEVEL:
@@ -591,6 +592,7 @@ class GlobalLogic:
                     .until(self.agent, lambda: (self.agent.blstats.y, self.agent.blstats.x) == (y, x))
                 )
 
+            step_count_before = self.agent.step_count
             (
                 self.agent.exploration.go_to_level_strategy(*level, go_to_strategy, exploration_strategy(None))
                 .before(exploration_strategy(None))#.before(self.agent.exploration.patrol())
@@ -604,6 +606,20 @@ class GlobalLogic:
                 ])
                 .until(self.agent, condition)
             ).run()
+
+            # hypothesis (see Agent.handle_exception): once the current level is fully explored and
+            # searched, every sub-strategy declines without acting while the milestone condition (e.g.
+            # Xp8 on Dlvl 1) is still unmet, so this loop spins forever without a single game action --
+            # the agent hangs, the game idles until the no-progress timeout and the run's remaining
+            # progress is forfeited. After many consecutive action-less passes, search in place so
+            # game time passes (monsters spawn and come to us, XP keeps growing) instead of hanging.
+            if self.agent.step_count == step_count_before:
+                idle_iterations += 1
+                if idle_iterations >= 20:
+                    idle_iterations = 0
+                    self.agent.search(10)
+            else:
+                idle_iterations = 0
 
     def global_strategy(self):
         return (
