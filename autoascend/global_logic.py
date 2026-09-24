@@ -558,6 +558,18 @@ class GlobalLogic:
                 level = (Level.DUNGEONS_OF_DOOM, 100)
 
             if condition():
+                # hypothesis: after the Dlvl 1 grind to Xp 8 the deep phase heads into the Gnomish
+                # Mines. For a gnome that is a safe road (most of the gnomes, dwarves and hill orcs
+                # there are peaceful to it), but for any other race it is a gauntlet of hostile
+                # packs on open cave levels that also bottom out at Mines' End (Dlvl 10-13), capping
+                # the depth milestones -- the best-scoring part of the score. Non-gnomes instead
+                # descend the main Dungeons of Doom (stairs, plus dig_down with any digging tool):
+                # room-and-corridor levels where fights come one at a time and no floor until
+                # Medusa. The switch happens only at the Xp 8 hand-off, so the grind is untouched.
+                if self.milestone == Milestone.BE_ON_FIRST_LEVEL and \
+                        self.agent.character.race != Character.GNOME:
+                    self.milestone = Milestone.GO_DOWN
+                    continue
                 self.milestone = Milestone(int(self.milestone) + 1)
                 continue
 
