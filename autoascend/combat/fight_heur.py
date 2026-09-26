@@ -185,7 +185,13 @@ def get_potential_wand_usages(agent, monsters, dy, dx):
             elif monster == 'peaceful':
                 priority -= p * 100
             elif monster == 'self':
-                priority -= p * 30
+                # hypothesis: our own bounced ray (6d6 fire/cold/lightning, a sleep or death ray)
+                # is far deadlier to us than the target: a bolt that bounces straight back hits the
+                # target twice (+50 for a 'dangerous' monster) and us once, so -30 still let the bot
+                # zap itself (pri s9: lightning at an adjacent dog, HP 55->6, dead; 'killed by a
+                # bolt of fire/cold' and 'magic missile' deaths on Dlvl 1-6). Price a self-hit like
+                # hitting a peaceful, so only rays with a small bounce-back chance get zapped.
+                priority -= p * 100
             elif monster is not None:
                 _, y, x, mon, _ = monster
                 if mon.mname in WEAK_MONSTERS:

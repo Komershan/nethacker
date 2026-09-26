@@ -62,6 +62,7 @@ class Agent:
         self.last_bfs_dis = None
         self.last_bfs_step = None
         self.last_prayer_turn = None
+        self.prayer_failed = False
         self._monk_meat_meals = 0
         self._previous_glyphs = None
         self._last_turn = -1
@@ -762,9 +763,22 @@ class Agent:
                 (self.last_prayer_turn is not None and self.blstats.time - self.last_prayer_turn > limit)
         )
 
+    # god-anger answers to a prayer; after one, waiting for a "safe" hunger prayer is pointless
+    PRAYER_FAILURE_MESSAGES = ('is displeased', 'is bummed', 'Thou hast angered me', 'Thou must relearn thy lessons',
+                               'Thou art arrogant', 'Thou hast strayed', 'Thou durst')
+    # the prayer timeout is rnz(350) after a successful prayer and hunger is only fixed below 200: a
+    # hunger prayer 1000 turns after the last one fails ~5.5% of the time, 1200 turns after ~2.4%
+    SAFE_HUNGER_PRAYER_GAP = 1200
+
     def pray(self):
+        history_len = len(self._message_history)
         self.step(A.Command.PRAY)
         self.last_prayer_turn = self.blstats.time
+        new_messages = self._message_history[history_len:] if len(self._message_history) > history_len \
+            else self._message_history[-20:]
+        messages = ' '.join(new_messages + [self.message])
+        if any(msg in messages for msg in self.PRAYER_FAILURE_MESSAGES):
+            self.prayer_failed = True
         # TODO: return value
         return True
 
@@ -1560,7 +1574,10 @@ class Agent:
         # Dlvl 1 grinds passing out between packs of jackals that ate them while unconscious.
         if (
                 (self.is_safe_to_pray(500) and self.critically_low_hp())
-                or (self.is_safe_to_pray(400) and self.blstats.hunger_state >= Hunger.WEAK)
+                or (self.is_safe_to_pray(400) and self.blstats.hunger_state >= Hunger.FAINTING)
+                or (self.is_safe_to_pray(400) and self.blstats.hunger_state >= Hunger.WEAK and
+                    (not self._has_reserve_food() or
+                     (not self.prayer_failed and self.is_safe_to_pray(self.SAFE_HUNGER_PRAYER_GAP))))
         ):
             yield True
             self.pray()
@@ -1814,19 +1831,39 @@ class Agent:
             if self.current_level().dungeon_number == Level.GNOMISH_MINES:
                 self._mines_bottom_found = True
 
-    @utils.debug_log('eat_from_inventory')
-    @Strategy.wrap
-    def eat_from_inventory(self):
-        if self.blstats.hunger_state < Hunger.HUNGRY:
-            yield False
+    def _reserve_food(self):
         for item in flatten_items(self.inventory.items):
             if item.category == nh.FOOD_CLASS and \
                     item.objs[0].name != 'sprig of wolfsbane' and \
                     (not item.is_corpse() or
                      item.monster_id in [MON.from_name(n) - nh.GLYPH_MON_OFF for n in ['lizard', 'lichen']]):
-                yield True
-                self.inventory.eat(item)
-                return
+                return item
+        return None
+
+    def _has_reserve_food(self):
+        return self._reserve_food() is not None
+
+    @utils.debug_log('eat_from_inventory')
+    @Strategy.wrap
+    def eat_from_inventory(self):
+        if self.blstats.hunger_state < Hunger.HUNGRY:
+            yield False
+        # hypothesis: prayer is the Dlvl 1 grind's food supply, one hunger prayer every ~1000 turns,
+        # and ~5.5% of those come too soon (rnz(350) prayer timeout); ~15 of them per grind make a
+        # failure likely, after which the bot faints for hundreds of turns and dies to newts and
+        # jackals (traces: val s9, rog-orc s3, wiz s6, sam s5). Carried food was eaten at the first
+        # Hungry, spending it when prayer was free. Keep it as a reserve eaten only when the
+        # hunger prayer is risky (<1200 turns since the last prayer) or a prayer already failed,
+        # and pray at Weak when it is safe: fewer failed prayers, fewer Dlvl 1 deaths, every role.
+        # (Port of DT6A@59ce30c.)
+        if not self.prayer_failed and self.blstats.hunger_state < Hunger.FAINTING and \
+                (self.blstats.hunger_state == Hunger.HUNGRY or self.is_safe_to_pray(self.SAFE_HUNGER_PRAYER_GAP)):
+            yield False
+        item = self._reserve_food()
+        if item is not None:
+            yield True
+            self.inventory.eat(item)
+            return
         yield False
 
     @utils.debug_log('cure_disease')
