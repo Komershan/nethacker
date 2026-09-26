@@ -166,7 +166,11 @@ EARLY_DIG_XL = 5
 # grind before it gives up and dives by the stairs; 0 disables the hunt
 PICK_HUNT_TURNS = 3000
 # experience level the Dlvl 1 grind stops at before the deep phase begins
-GRIND_XL = 5
+# hypothesis: leaving Dlvl 1 at Xp 5 (~45 max HP) sends most roles into the Mines / stair dive
+# underpowered -- 60% of games here die on Dlvl 2-6 at Xp 5-7 (0.03-0.05) to ants, wands, were-
+# creatures. Grinding the safe first floor to Xp 8 banks 0.075 on its own and starts the descent
+# with ~70 HP. Pick carriers (Archeologists) are unaffected: they dig from EARLY_DIG_XL.
+GRIND_XL = 8
 
 
 class GlobalLogic:
@@ -537,7 +541,10 @@ class GlobalLogic:
         while 1:
             explore_stairs_condition = lambda: False
             if self.milestone == Milestone.BE_ON_FIRST_LEVEL:
-                condition = lambda: self.agent.blstats.experience_level >= GRIND_XL
+                # a Barbarian (d12 HP, two-handed sword, poison resistance) is already strong at Xp 5
+                # and loses more to the long grind's hunger than it gains from the extra levels
+                grind_xl = 5 if self.agent.character.role == Character.BARBARIAN else GRIND_XL
+                condition = lambda: self.agent.blstats.experience_level >= grind_xl
                 # explore_stairs_condition = lambda: self.agent.inventory.items.total_nutrition() == 0 and \
                 #                                    self.agent.blstats.hunger_state >= Hunger.NOT_HUNGRY
                 level = (Level.DUNGEONS_OF_DOOM, 1)
