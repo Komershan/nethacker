@@ -172,7 +172,11 @@ GRIND_XL = 5
 # half their seeds bank only 0.029-0.037). Grinding the safe Dlvl 1 to Xp 8 first banks the Xp 8
 # milestone (0.075) and enters the hostile Mines with far more HP; Mines-folk keep Xp 5 because
 # their Mines are peaceful. A carried pick still digs from EARLY_DIG_XL.
-HOSTILE_GRIND_XL = 8
+# hypothesis: once the grind has banked Xp 8 (0.075), dying on Dlvl 1 costs nothing, while the
+# weak roles leaving at Xp 8 mostly die at shallow depth still at Xp 8. Grinding on to Xp 9 banks
+# 0.117 when it gets there and sends them down with more HP; in practice few games get past Xp 8,
+# so 10 measured identical to 9.
+HOSTILE_GRIND_XL = 9
 # hypothesis: the long Xp 8 grind only pays for roles with no real offense at Xp 5 (Tourist,
 # Rogue). The fighting roles already have the HP, AC and damage at Xp 5 to survive the pick hunt
 # and the dive, and 10-15k extra Dlvl 1 turns only drain their food (the Monk can't eat meat
@@ -563,8 +567,12 @@ class GlobalLogic:
         while 1:
             explore_stairs_condition = lambda: False
             if self.milestone == Milestone.BE_ON_FIRST_LEVEL:
-                grind_xl = GRIND_XL if self.agent.character.race in (Character.GNOME, Character.DWARF) or \
-                    self.agent.character.role in STRONG_OFFENSE_ROLES else HOSTILE_GRIND_XL
+                # hypothesis: the weak roles (Ranger, Healer) are just as fragile at Xp 5 when they are
+                # gnomes: ran-gno / hea-gno leave at Xp 5 and 13/15 seeds each die at Xp 5-7 in the
+                # upper Mines (Dlvl 3-5), below the Xp 8 milestone (0.075). The Mines' peace doesn't
+                # cover ants, bats, elves and orcs. Grind them to HOSTILE_GRIND_XL like the Tourist and Rogue; a
+                # carried pick (Archeologist) still skips the grind at EARLY_DIG_XL.
+                grind_xl = GRIND_XL if self.agent.character.role in STRONG_OFFENSE_ROLES else HOSTILE_GRIND_XL
                 condition = lambda: self.agent.blstats.experience_level >= grind_xl
                 # explore_stairs_condition = lambda: self.agent.inventory.items.total_nutrition() == 0 and \
                 #                                    self.agent.blstats.hunger_state >= Hunger.NOT_HUNGRY
