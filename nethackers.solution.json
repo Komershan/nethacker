@@ -1,0 +1,15 @@
+{
+  "schema": "nethackers.solution/v1",
+  "name": "autoascend-dive-merge",
+  "root": "autoascend",
+  "parents": [
+    "github.com/Komershan/nethacker@8e0c325dc25da5ba47a0f1234c20fce43fe4b516",
+    "github.com/Komershan/nethacker@8e0e320501ad2b70f8d912e3e555d4f1e59f786e",
+    "github.com/daglar-dragomirov/nethacker@7a65e41354f41b64582c7c978dc10e94ac4445fd"
+  ],
+  "influences": [
+    "github.com/daglar-dragomirov/nethacker@43cbe5ac163139d6d1208aa0cc13189c1a84a3fa",
+    "github.com/DT6A/nethacker@464e1662a4cb60567c7946d2d952278c64eefe84"
+  ],
+  "entrypoint": "bot.py"
+}
