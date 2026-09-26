@@ -26,6 +26,15 @@ BLStats = namedtuple('BLStats',
                      'x y strength_percentage strength dexterity constitution intelligence wisdom charisma score hitpoints max_hitpoints depth gold energy max_energy armor_class monster_level experience_level experience_points time hunger_state carrying_capacity dungeon_number level_number prop_mask alignment')
 
 
+# a hunger prayer waits this many turns after the previous prayer: a timeout drawn from rnz(350)
+# is still above the major-trouble limit (200) ~7% of the time after 900 turns, ~2.5% after 1200
+HUNGER_PRAYER_GAP = 1200
+# ...unless the character has been fainting this long (hunger then drops at 1/10 the rate)
+FAINTING_PRAYER_DEADLINE = 300
+PRAYER_FAILED_MESSAGES = ('is displeased', 'Thou hast angered me', 'Thou art arrogant', 'Thou hast strayed',
+                          'Thou durst', 'relearn thy lessons', 'is bummed')
+
+
 class Agent:
     def __init__(self, env, seed=0, verbose=False, panic_on_errors=False):
         self.env = env
@@ -58,6 +67,8 @@ class Agent:
         self.last_bfs_dis = None
         self.last_bfs_step = None
         self.last_prayer_turn = None
+        self.prayer_failed = False  # the god was angered: every later prayer only smites again
+        self._fainting_since = None
         self._monk_meat_meals = 0
         self._previous_glyphs = None
         self._last_turn = -1
@@ -738,6 +749,8 @@ class Agent:
     def is_safe_to_pray(self, limit=500):
         # the prayer timeout starts at 300 and drops by one a turn; major trouble is fixed once it is
         # at most 200, so the first prayer is safe from about turn 100 (not 300: a diver is long dead)
+        if self.prayer_failed:
+            return False
         return (
                 (self.last_prayer_turn is None and self.blstats.time > 110) or
                 (self.last_prayer_turn is not None and self.blstats.time - self.last_prayer_turn > limit)
@@ -746,6 +759,8 @@ class Agent:
     def pray(self):
         self.step(A.Command.PRAY)
         self.last_prayer_turn = self.blstats.time
+        if any(s in self.message for s in PRAYER_FAILED_MESSAGES):
+            self.prayer_failed = True
         # TODO: return value
         return True
 
@@ -1419,6 +1434,11 @@ class Agent:
     @utils.debug_log('emergency_strategy')
     @Strategy.wrap
     def emergency_strategy(self):
+        if self.blstats.hunger_state >= Hunger.FAINTING:
+            if self._fainting_since is None:
+                self._fainting_since = self.blstats.time
+        else:
+            self._fainting_since = None
 
         if self.blstats.experience_level >= 8:
             if self.should_cast_extra_heal():
@@ -1495,16 +1515,43 @@ class Agent:
                     self.zap(sleep_wand, direction)
                     return
 
+        # hypothesis: prayer is the Dlvl 1 grind's food supply (a hunger prayer every ~1000 turns for
+        # 15-20k turns), and traces show that is what ends most grinds: the bot prays at the first
+        # faint, ~900-1000 turns after the previous prayer, while the rnz(350) prayer timeout has a
+        # long tail -- about 1 in 10 such prayers come too soon, the god is angered (Luck -3, anger),
+        # and every later prayer (re-tried each 400 turns) smites again (lost levels) while the
+        # character faints over and over until a newt, rat or bat kills it. Waiting until
+        # HUNGER_PRAYER_GAP turns have passed cuts that failure rate to ~2-3%; fainting-phase
+        # hunger drops at a tenth of the rate while unconscious, so starvation is still far away,
+        # and the helpless fainting spells are spent standing on Elbereth, which the grind's
+        # animals and humanoids respect. After a failed prayer the bot no longer prays at all.
+        hunger_prayer_due = self.blstats.hunger_state >= Hunger.FAINTING and (
+                self.last_prayer_turn is None or
+                self.blstats.time - self.last_prayer_turn >= HUNGER_PRAYER_GAP or
+                self.blstats.time - self._fainting_since >= FAINTING_PRAYER_DEADLINE or
+                self.blstats.hitpoints * 2 < self.blstats.max_hitpoints)
         # low HP is only "major trouble" to the god at HP <= 5 or HP <= max/7 (pray.c in_trouble);
         # above that the prayer is answered "displeased", fixes nothing and burns the timeout
         if (
                 (self.is_safe_to_pray(500) and
                  (self.blstats.hitpoints * 7 <= self.blstats.max_hitpoints or self.blstats.hitpoints <= 5))
-                or (self.is_safe_to_pray(400) and self.blstats.hunger_state >= Hunger.FAINTING)
+                or (self.is_safe_to_pray(400) and hunger_prayer_due)
         ):
             yield True
             self.pray()
             return
+
+        if self.blstats.hunger_state >= Hunger.FAINTING and not self.prayer_failed and \
+                not hunger_prayer_due and not self._has_food_in_reach():
+            if self.inventory.engraving_below_me.lower() != 'elbereth':
+                if self.can_engrave():
+                    yield True
+                    self.engrave('Elbereth')
+                    return
+            else:
+                yield True
+                self.search(5)
+                return
 
         # standing on a down staircase at crisis HP with prayer spent: take it. Only adjacent
         # monsters follow, the new level is a fresh start, and the depth is banked either way.
@@ -1732,6 +1779,19 @@ class Agent:
             self._undiggable_levels.add(self.current_level().key())
             if self.current_level().dungeon_number == Level.GNOMISH_MINES:
                 self._mines_bottom_found = True
+
+    def _has_food_in_reach(self):
+        for item in flatten_items(self.inventory.items):
+            if item.category == nh.FOOD_CLASS and \
+                    item.objs[0].name != 'sprig of wolfsbane' and \
+                    (not item.is_corpse() or
+                     item.monster_id in [MON.from_name(n) - nh.GLYPH_MON_OFF for n in ['lizard', 'lichen']]):
+                return True
+        for corpse_mapping in self.current_level().corpses_to_eat.values():
+            for monster_id, corpse_age in corpse_mapping.items():
+                if self._is_corpse_editable(monster_id, corpse_age):
+                    return True
+        return False
 
     @utils.debug_log('eat_from_inventory')
     @Strategy.wrap
