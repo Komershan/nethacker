@@ -800,7 +800,13 @@ class Agent:
                     yield ' '
                 if 'In what direction?' in self.message:
                     success[0] = True
-                    yield direction
+                    yield {
+                        'n': A.CompassDirection.N, 's': A.CompassDirection.S,
+                        'e': A.CompassDirection.E, 'w': A.CompassDirection.W,
+                        'ne': A.CompassDirection.NE, 'se': A.CompassDirection.SE,
+                        'nw': A.CompassDirection.NW, 'sw': A.CompassDirection.SW,
+                        '.': A.MiscDirection.WAIT,
+                    }[direction]
 
             self.step(A.Command.CAST, type_letters())
             if success[0]:
@@ -1144,7 +1150,7 @@ class Agent:
                 actions = list(filter(lambda x: x[1][0] != 'ranged', actions))
 
             if allow_attack_all:
-                attack_actions = [a for a in actions if a[1][0] in ('melee', 'kick', 'ranged', 'zap')]
+                attack_actions = [a for a in actions if a[1][0] in ('melee', 'kick', 'ranged', 'zap', 'cast')]
                 if attack_actions:
                     actions = attack_actions
 
@@ -1200,6 +1206,11 @@ class Agent:
                 fired = self.fire(ammo, dir)
                 assert fired, (ammo, dir)
                 return wait_counter
+
+        elif best_action[0] == 'cast':
+            _, dy, dx = best_action
+            self.cast('force bolt', (dy, dx))
+            return wait_counter
 
         elif best_action[0] == 'elbereth':
             assert self.inventory.engraving_below_me.lower() != 'elbereth'

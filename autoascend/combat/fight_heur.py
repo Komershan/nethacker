@@ -198,6 +198,51 @@ def get_potential_wand_usages(agent, monsters, dy, dx):
     return ret
 
 
+def force_bolt_actions(agent, monsters):
+    # hypothesis: the Wizard never casts, so it melees with a quarterstaff (d6) at ~12 HP and dies
+    # at Xp 0-6 to kobolds, jackals, rothes and wolves (wiz-orc: 3/15 seeds score 0). Force bolt
+    # (2d6, 5 Pw, near-certain to cast) kills most early monsters in one hit at range before they
+    # reach melee; the Wizard's fast Pw regeneration allows one every few dozen turns early and far
+    # more later. Only the first monster along a line is hit, so peacefuls/pets block the shot.
+    from ..character import Character
+    from ..glyph import Hunger
+    if agent.character.role != Character.WIZARD:
+        return []
+    if agent.blstats.energy < 5 or agent.blstats.hunger_state >= Hunger.WEAK:
+        return []
+    if agent._last_turn - agent.last_cast_fail_turn['force bolt'] < 5:
+        return []
+    agent.character.known_spells.setdefault('force bolt', 'a')
+    ret = []
+    for dy, dx in product([-1, 0, 1], [-1, 0, 1]):
+        if dy == 0 and dx == 0:
+            continue
+        y, x = agent.blstats.y, agent.blstats.x
+        for dis in range(1, 7):
+            y += dy
+            x += dx
+            if not inside(agent, y, x) or not agent.current_level().walkable[y, x] or \
+                    agent.glyphs[y, x] in G.PETS:
+                break
+            if agent.glyphs[y, x] in G.MONS or agent.glyphs[y, x] in G.INVISIBLE_MON:
+                monster = [m for m in monsters if m[1] == y and m[2] == x]
+                if not monster:
+                    break  # a peaceful: don't shoot
+                mon = monster[0][3]
+                if mon.mname in EXPLODING_MONSTERS and dis <= 1:
+                    break
+                if mon.mname in WEAK_MONSTERS:
+                    # melee is enough for these unless the Wizard is hurt
+                    pri = 10 if agent.blstats.hitpoints < agent.blstats.max_hitpoints / 2 else -5
+                else:
+                    pri = 20 if dis <= 3 else 14
+                if agent.inventory.engraving_below_me.lower() == 'elbereth':
+                    pri -= 100
+                ret.append((pri, ('cast', dy, dx)))
+                break
+    return ret
+
+
 def elbereth_action(agent, monsters):
     if agent.inventory.engraving_below_me.lower() == 'elbereth':
         return []
@@ -276,6 +321,7 @@ def get_available_actions(agent, monsters):
     if to_pickup:
         actions.append((15, ('pickup', to_pickup)))
 
+    actions.extend(force_bolt_actions(agent, monsters))
     actions.extend(elbereth_action(agent, monsters))
     actions.extend(wait_action(agent, monsters))
 
