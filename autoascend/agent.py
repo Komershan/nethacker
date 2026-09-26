@@ -1514,6 +1514,21 @@ class Agent:
             self.direction('>')
             return
 
+        # hypothesis: the rule above only fires when the character already stands on '>', yet
+        # most deaths past the grind (Xp 5-8 on Dlvl 2-6: soldier ants, rothes, unicorns,
+        # werejackals) happen a few squares from a known down staircase. Below half HP with a
+        # mobile hostile close by, walk towards a nearby known '>' and take it: only adjacent
+        # monsters follow, the new level usually gives rest_to_heal a quiet spot, and the extra
+        # depth is banked by the score even if the character dies later.
+        step = self._flee_downstairs_step()
+        if step is not None:
+            yield True
+            if step == '>':
+                self.direction('>')
+            else:
+                self.move(*step)
+            return
+
         # hypothesis: many runs die in melee at low XP (Xp5-7) across all four identities. This
         # Elbereth last resort sits at the very bottom of emergency_strategy -- below the healing
         # cast, healing potion, fruit juice and prayer -- so it only fires when the Healer is at
@@ -1533,6 +1548,32 @@ class Agent:
             return
 
         yield False
+
+    def _flee_downstairs_step(self, max_dist=12, threat_dist=5):
+        level = self.current_level()
+        if level.dungeon_number not in (Level.DUNGEONS_OF_DOOM, Level.GNOMISH_MINES) or \
+                level.level_number < 2:
+            return None
+        if self.blstats.hitpoints * 2 >= self.blstats.max_hitpoints:
+            return None
+        y, x = self.blstats.y, self.blstats.x
+        threats = [m for m in self.get_visible_monsters()
+                   if max(abs(m[1] - y), abs(m[2] - x)) <= threat_dist and
+                   m[3].mname not in combat.monster_utils.ONLY_RANGED_SLOW_MONSTERS]
+        if not threats:
+            return None
+        if level.objects[y, x] in G.STAIR_DOWN:
+            return '>'
+        dis = self.bfs()
+        stairs = [(sy, sx) for sy, sx in zip(*utils.isin(level.objects, G.STAIR_DOWN).nonzero())
+                  if 0 < dis[sy, sx] <= max_dist]
+        if not stairs:
+            return None
+        sy, sx = min(stairs, key=lambda p: dis[p])
+        ny, nx = self.path(y, x, sy, sx, dis=dis)[1]
+        if self.monster_tracker.monster_mask[ny, nx]:
+            return None
+        return ny, nx
 
     def _can_rest(self):
         if self.blstats.hitpoints * 2 >= self.blstats.max_hitpoints:
