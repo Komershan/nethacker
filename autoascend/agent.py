@@ -1534,6 +1534,40 @@ class Agent:
 
         yield False
 
+    def _can_rest(self):
+        if self.blstats.hitpoints * 2 >= self.blstats.max_hitpoints:
+            return False
+        if self.blstats.hunger_state >= Hunger.HUNGRY or self.character.prop.hallu:
+            return False
+        if self.current_level().shop[self.blstats.y, self.blstats.x]:
+            return False
+        for _, y, x, _, _ in self.get_visible_monsters():
+            if max(abs(y - self.blstats.y), abs(x - self.blstats.x)) <= 6:
+                return False
+        return True
+
+    @utils.debug_log('rest_to_heal')
+    @Strategy.wrap
+    def rest_to_heal(self):
+        # hypothesis: the bot never rests -- after a fight it walks on (explores, takes stairs,
+        # digs) at whatever HP it has left, so the next monster (soldier ant, rothe, werejackal,
+        # giant bat) meets a half-dead character at Xp 5-8 on Dlvl 2-5, where most of the weak
+        # identities die. Below half HP with no hostile in sight and food to spare, stand on a
+        # dust Elbereth and search until HP is back to 90%. fight2/emergency/eating all preempt
+        # this, so a monster showing up interrupts the rest.
+        if not self._can_rest():
+            yield False
+        yield True
+        level = self.current_level()
+        y, x = self.blstats.y, self.blstats.x
+        if self.inventory.engraving_below_me.lower() != 'elbereth' and self.can_engrave() and \
+                level.objects[y, x] not in G.STAIR_UP and level.objects[y, x] not in G.STAIR_DOWN and \
+                level.objects[y, x] not in G.ALTAR and level.objects[y, x] not in G.FOUNTAIN:
+            self.engrave('Elbereth')
+        while self.blstats.hitpoints * 10 < self.blstats.max_hitpoints * 9 and \
+                self.blstats.hunger_state < Hunger.HUNGRY:
+            self.search(5)
+
     @utils.debug_log('proactive_sleep')
     @Strategy.wrap
     def proactive_sleep_strategy(self):
