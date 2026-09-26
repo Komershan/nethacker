@@ -31,6 +31,10 @@ BLStats = namedtuple('BLStats',
 HUNGER_PRAYER_GAP = 1200
 # ...unless the character has been fainting this long (hunger then drops at 1/10 the rate)
 FAINTING_PRAYER_DEADLINE = 300
+# ...or as soon as a hostile that can move shows up this close while the character is Fainting,
+# provided at least this many turns have passed since the previous prayer
+THREAT_PRAYER_GAP = 950
+THREAT_PRAYER_DISTANCE = 6
 PRAYER_FAILED_MESSAGES = ('is displeased', 'Thou hast angered me', 'Thou art arrogant', 'Thou hast strayed',
                           'Thou durst', 'relearn thy lessons', 'is bummed')
 
@@ -1529,7 +1533,8 @@ class Agent:
                 self.last_prayer_turn is None or
                 self.blstats.time - self.last_prayer_turn >= HUNGER_PRAYER_GAP or
                 self.blstats.time - self._fainting_since >= FAINTING_PRAYER_DEADLINE or
-                self.blstats.hitpoints * 2 < self.blstats.max_hitpoints)
+                self.blstats.hitpoints * 2 < self.blstats.max_hitpoints or
+                self._fainting_threat_prayer_due())
         # low HP is only "major trouble" to the god at HP <= 5 or HP <= max/7 (pray.c in_trouble);
         # above that the prayer is answered "displeased", fixes nothing and burns the timeout
         if (
@@ -1779,6 +1784,26 @@ class Agent:
             self._undiggable_levels.add(self.current_level().key())
             if self.current_level().dungeon_number == Level.GNOMISH_MINES:
                 self._mines_bottom_found = True
+
+    def _fainting_threat_prayer_due(self):
+        # hypothesis: every Dlvl 1 grind death traced (kni s0, rog-orc s1/s10, rog-hum s5) is the same:
+        # the Fainting vigil waits for HUNGER_PRAYER_GAP (1200) turns after the last prayer, a newt,
+        # rat, bat or zombie wanders in, and the character -- unconscious for most of the next turns,
+        # its dust Elbereth scuffed -- is bitten from full HP to death a few dozen turns before the
+        # prayer would come (the "HP < max/2" trigger never fires: the character cannot act while
+        # fainted). Fainting only starts 900-1200 turns after a prayer, where a prayer comes too soon
+        # just ~3-6% of the time (rnz(350) tail), while a monster next to a fainting character is
+        # nearly always fatal. So pay the small prayer risk exactly when the danger shows up: pray at
+        # once when a hostile mobile monster comes within THREAT_PRAYER_DISTANCE during the vigil.
+        if self.last_prayer_turn is None or \
+                self.blstats.time - self.last_prayer_turn < THREAT_PRAYER_GAP:
+            return False
+        for _, y, x, permonst, _ in self.get_visible_monsters():
+            if getattr(permonst, 'mmove', 12) == 0:
+                continue
+            if max(abs(y - self.blstats.y), abs(x - self.blstats.x)) <= THREAT_PRAYER_DISTANCE:
+                return True
+        return False
 
     def _has_food_in_reach(self):
         for item in flatten_items(self.inventory.items):
