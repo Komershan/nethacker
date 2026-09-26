@@ -1612,6 +1612,42 @@ class Agent:
 
         yield False
 
+    def _hostile_near(self, radius):
+        for _, my, mx, _, _ in self.get_visible_monsters():
+            if max(abs(my - self.blstats.y), abs(mx - self.blstats.x)) <= radius:
+                return True
+        return False
+
+    @utils.debug_log('rest_to_heal')
+    @Strategy.wrap
+    def rest_to_heal(self):
+        # hypothesis: the bot never rests. After a fight it walks on (explores, takes stairs, digs
+        # down) at whatever HP it has left, so the next jackal pack, gecko or soldier ant on Dlvl 1
+        # or a fresh level finds it at a third of its HP -- most Dlvl 1 grind deaths are Xp 6-7
+        # characters killed by trivial monsters, and deep deaths come right after arrival. Below
+        # half HP with no hostile in sight, stand on a dust Elbereth and search until HP is back
+        # to 90%: fights start at full HP, fewer deaths in every role. Not on Dlvl 1 (the grind
+        # rarely leaves a fight below half HP) and not when Hungry (resting burns scarce food). (Port of the m5 lineage's
+        # rest_to_heal, +0.015 there.)
+        if self.blstats.hitpoints >= self.blstats.max_hitpoints / 2 or \
+                self.blstats.depth <= 1 or \
+                self.blstats.hunger_state >= Hunger.HUNGRY or \
+                self.current_level().shop[self.blstats.y, self.blstats.x] or \
+                self._hostile_near(5):
+            yield False
+        yield True
+        level = self.current_level()
+        pos = (self.blstats.y, self.blstats.x)
+        if self.inventory.engraving_below_me.lower() != 'elbereth' and self.can_engrave() and \
+                level.objects[pos] not in G.STAIR_UP | G.STAIR_DOWN | G.ALTAR | G.FOUNTAIN:
+            self.engrave('Elbereth')
+        for _ in range(100):
+            if self.blstats.hitpoints >= 0.9 * self.blstats.max_hitpoints or \
+                    self.blstats.hunger_state >= Hunger.HUNGRY or \
+                    (self.blstats.y, self.blstats.x) != pos or self._hostile_near(5):
+                return
+            self.search(5)
+
     @utils.debug_log('proactive_sleep')
     @Strategy.wrap
     def proactive_sleep_strategy(self):
