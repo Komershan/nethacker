@@ -13,7 +13,7 @@ from . import utils
 from .character import Character
 from .exceptions import AgentPanic, AgentFinished, AgentChangeStrategy
 from .exploration_logic import ExplorationLogic
-from .global_logic import GlobalLogic, EARLY_DIG_XL
+from .global_logic import GlobalLogic, early_dig_xl
 from .glyph import MON, C, Hunger, G, SHOP
 from .item import Item, flatten_items
 from .item.inventory import Inventory
@@ -1653,7 +1653,7 @@ class Agent:
         # of depth and experience level, so a fresh character falls through levels faster than
         # the dungeon can catch up with it, and depth is worth far more than the Xp 8 it forgoes.
         if self.blstats.experience_level < 8 and not (
-                self.blstats.experience_level >= EARLY_DIG_XL and self.pick_for_digging() is not None):
+                self.blstats.experience_level >= early_dig_xl(self.character) and self.pick_for_digging() is not None):
             yield False
             return
         if self.character.prop.polymorph:

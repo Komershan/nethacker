@@ -162,6 +162,16 @@ class Milestone(IntEnum):
 
 # experience level from which a character carrying a pick-axe skips the Dlvl 1 grind and digs down
 EARLY_DIG_XL = 5
+# hypothesis: an Archeologist carries its pick from turn 1, so it digs from EARLY_DIG_XL at ~32 HP and
+# falls into the Dlvl 9 difficulty step ((depth + Xp) / 2 brings yetis, leocrottas, soldier ants):
+# 7/15 arc games end at exactly Dlvl 9 at Xp 5. More safe Dlvl 1 levels first carry it past that
+# step. Only for the role that starts with a pick: characters that find one later (bar, cav, mon, ...)
+# are already deep and past the grind, and delaying their digging lost score (EARLY_DIG_XL=6 for all).
+ARC_EARLY_DIG_XL = 6
+
+
+def early_dig_xl(character):
+    return ARC_EARLY_DIG_XL if character.role == Character.ARCHEOLOGIST else EARLY_DIG_XL
 # turns a non-gnome, non-dwarf spends hunting the Mines' dwarves for a pick-axe after the Dlvl 1
 # grind before it gives up and dives by the stairs; 0 disables the hunt
 PICK_HUNT_TURNS = 3000
@@ -620,7 +630,7 @@ class GlobalLogic:
             # a character that can dig heads straight down instead of grinding on Dlvl 1 (see
             # Agent.dig_down); otherwise the Dlvl 1 milestone walks it back up after every hole
             if self.milestone < Milestone.GO_DOWN and \
-                    self.agent.blstats.experience_level >= EARLY_DIG_XL and \
+                    self.agent.blstats.experience_level >= early_dig_xl(self.agent.character) and \
                     self.agent.pick_for_digging() is not None:
                 self.milestone = Milestone.GO_DOWN
                 continue
