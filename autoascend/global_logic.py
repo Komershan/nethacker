@@ -166,7 +166,13 @@ EARLY_DIG_XL = 5
 # grind before it gives up and dives by the stairs; 0 disables the hunt
 PICK_HUNT_TURNS = 3000
 # experience level the Dlvl 1 grind stops at before the deep phase begins
-GRIND_XL = 5
+# hypothesis: leaving Dlvl 1 at Xp 5 (~45 max HP) sends rogues, knights and dwarvish valkyries into
+# the Mines pick hunt / stair dive underpowered: traces show them dying within 1-3k turns of
+# leaving to gnome-lord wands, rothes, werejackal + killer bee packs, banking only Xp 5-6
+# (0.03-0.04). Grinding the safe first floor on to Xp 8 banks 0.075 by itself before any risk is
+# taken, and the extra HP/to-hit carries the later dive deeper (monster difficulty follows depth).
+# A character that already carries a pick still digs from EARLY_DIG_XL.
+GRIND_XL = 8
 
 
 class GlobalLogic:
