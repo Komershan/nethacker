@@ -537,6 +537,9 @@ class GlobalLogic:
 
         self.agent.go_to(y, x, stop_one_before=True)
 
+    def _skip_full_explore(self):
+        return self.milestone == Milestone.GO_DOWN and self.agent.character.race == Character.GNOME
+
     @Strategy.wrap
     def current_strategy(self):
         yield True
@@ -672,7 +675,15 @@ class GlobalLogic:
                 self.agent.exploration.go_to_level_strategy(*level, go_to_strategy, exploration_strategy(None))
                 .before(exploration_strategy(None))#.before(self.agent.exploration.patrol())
                 .preempt(self.agent, [
-                    exploration_strategy(0),
+                    # hypothesis: after the Xp 8 grind (and pick hunt) the GO_DOWN dive still fully
+                    # explored every level before taking stairs it already knew, spending thousands
+                    # of turns per shallow level (hunger, wandering spawns) and dying at Dlvl 3-8
+                    # (hub idea #7, Komershan 967047b). Gnomes reach GO_DOWN only after the Mines
+                    # (peaceful to them) or with a pick, so for them skip the full-explore preempt and
+                    # explore only until the stairs are found. Measured: applying it to every race
+                    # lost arc/bar/sam/wiz depth (they need the exploration's food and gear); gnomes
+                    # gained on every identity (cav/hea/ran), and for a pickless-only rule they did not.
+                    exploration_strategy(0).condition(lambda: not self._skip_full_explore()),
                     exploration_strategy(None).until(
                         self.agent, lambda: self.agent.blstats.hitpoints >= 0.8 * self.agent.blstats.max_hitpoints)
                 ])
