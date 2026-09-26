@@ -167,6 +167,19 @@ EARLY_DIG_XL = 5
 PICK_HUNT_TURNS = 3000
 # experience level the Dlvl 1 grind stops at before the deep phase begins
 GRIND_XL = 5
+# hypothesis: races the Mines are hostile to (not gnome/dwarf) leave Dlvl 1 at Xp 5 (~45 HP) and
+# mostly die at Xp 5-6 within a few thousand turns of the pick hunt / dive (rog, tou, wiz, kni:
+# half their seeds bank only 0.029-0.037). Grinding the safe Dlvl 1 to Xp 8 first banks the Xp 8
+# milestone (0.075) and enters the hostile Mines with far more HP; Mines-folk keep Xp 5 because
+# their Mines are peaceful. A carried pick still digs from EARLY_DIG_XL.
+HOSTILE_GRIND_XL = 8
+# hypothesis: the long Xp 8 grind only pays for roles with no real offense at Xp 5 (Tourist,
+# Rogue). The fighting roles already have the HP, AC and damage at Xp 5 to survive the pick hunt
+# and the dive, and 10-15k extra Dlvl 1 turns only drain their food (the Monk can't eat meat
+# corpses) and prayer timeout before the deep phase; the Wizard now kills at range with Force bolt
+# (fight_heur.force_bolt_actions), which was its missing offense. They leave at GRIND_XL.
+STRONG_OFFENSE_ROLES = (Character.BARBARIAN, Character.VALKYRIE, Character.SAMURAI, Character.KNIGHT,
+                        Character.MONK, Character.CAVEMAN, Character.PRIEST, Character.WIZARD)
 
 
 class GlobalLogic:
@@ -550,7 +563,9 @@ class GlobalLogic:
         while 1:
             explore_stairs_condition = lambda: False
             if self.milestone == Milestone.BE_ON_FIRST_LEVEL:
-                condition = lambda: self.agent.blstats.experience_level >= GRIND_XL
+                grind_xl = GRIND_XL if self.agent.character.race in (Character.GNOME, Character.DWARF) or \
+                    self.agent.character.role in STRONG_OFFENSE_ROLES else HOSTILE_GRIND_XL
+                condition = lambda: self.agent.blstats.experience_level >= grind_xl
                 # explore_stairs_condition = lambda: self.agent.inventory.items.total_nutrition() == 0 and \
                 #                                    self.agent.blstats.hunger_state >= Hunger.NOT_HUNGRY
                 level = (Level.DUNGEONS_OF_DOOM, 1)
